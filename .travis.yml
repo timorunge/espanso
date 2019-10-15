@@ -1,0 +1,26 @@
+language: go
+
+go:
+  - 1.13.x
+  - 1.12.x
+  - tip
+
+os:
+  - linux
+  - osx
+
+env:
+  - GO111MODULE=on
+
+matrix:
+  allow_failures:
+    - go: tip
+  fast_finish: true
+
+install: true
+
+before_script:
+  - go get github.com/magefile/mage
+
+script:
+  - mage -v ci
