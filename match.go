@@ -8,6 +8,7 @@ import (
 type Match struct {
 	trigger string
 	replace string
+	word    bool
 }
 
 // NewMatch is generating a new match.
@@ -27,6 +28,12 @@ func (m *Match) SetReplace(r string) *Match {
 	return m
 }
 
+// SetWord is setting the word value for a match.
+func (m *Match) SetWord(w bool) *Match {
+	m.word = w
+	return m
+}
+
 // Trigger returns the trigger value for a match.
 func (m *Match) Trigger() string {
 	return toRaw(m.trigger)
@@ -37,8 +44,21 @@ func (m *Match) Replace() string {
 	return toRaw(m.replace)
 }
 
-// Matches represents mutiple matches for espanso.
+// Word returns the word value for a match.
+func (m *Match) Word() bool {
+	return m.word
+}
+
+// Matches represents multiple matches for espanso.
 type Matches []Match
+
+// SetWord sets the word value for multiple matches.
+func (matches Matches) SetWord(w bool) Matches {
+	for _, match := range matches {
+		match.SetWord(w)
+	}
+	return matches
+}
 
 // DictToMatches is converting a dict with the format of
 // var dict = []string{

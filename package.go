@@ -69,6 +69,9 @@ matches:
 {{- range $_, $match := .Matches }}
   - trigger: "{{ $match.Trigger }}"
     replace: "{{ $match.Replace }}"
+	{{- if $match.Word }}
+    word: {{ $match.Word }}
+    {{- end -}}
 {{- end -}}`
 
 // Write is writing the generated espanso package.
