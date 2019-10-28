@@ -53,9 +53,14 @@ func (m *Match) Word() bool {
 type Matches []Match
 
 // SetWord sets the word value for multiple matches.
-func (matches Matches) SetWord(w bool) Matches {
-	for _, match := range matches {
-		match.SetWord(w)
+func (m Matches) SetWord(w bool) Matches {
+	var matches Matches
+	for _, match := range m {
+		nm := NewMatch()
+		nm.SetTrigger(match.Trigger())
+		nm.SetReplace(match.Replace())
+		nm.SetWord(w)
+		matches = append(matches, nm)
 	}
 	return matches
 }
