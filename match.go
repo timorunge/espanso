@@ -6,14 +6,21 @@ import (
 
 // Match represents a single match for espanso.
 type Match struct {
-	trigger string
-	replace string
-	word    bool
+	propagateCase bool
+	replace       string
+	trigger       string
+	word          bool
 }
 
 // NewMatch is generating a new match.
 func NewMatch() Match {
 	return Match{}
+}
+
+// SetPropagateCase is setting the propagate_case value for a match.
+func (m *Match) SetPropagateCase(p bool) *Match {
+	m.propagateCase = p
+	return m
 }
 
 // SetTrigger is setting the trigger value for a match.
@@ -34,6 +41,11 @@ func (m *Match) SetWord(w bool) *Match {
 	return m
 }
 
+// PropagateCase returns the propagateCase value for a match.
+func (m *Match) PropagateCase() bool {
+	return m.propagateCase
+}
+
 // Trigger returns the trigger value for a match.
 func (m *Match) Trigger() string {
 	return toRaw(m.trigger)
@@ -52,11 +64,26 @@ func (m *Match) Word() bool {
 // Matches represents multiple matches for espanso.
 type Matches []Match
 
+// SetPropagateCase sets the propagateCase value for multiple matches.
+func (m Matches) SetPropagateCase(p bool) Matches {
+	var matches Matches
+	for _, match := range m {
+		nm := NewMatch()
+		nm.SetPropagateCase(p)
+		nm.SetReplace(match.Replace())
+		nm.SetTrigger(match.Trigger())
+		nm.SetWord(match.Word())
+		matches = append(matches, nm)
+	}
+	return matches
+}
+
 // SetWord sets the word value for multiple matches.
 func (m Matches) SetWord(w bool) Matches {
 	var matches Matches
 	for _, match := range m {
 		nm := NewMatch()
+		nm.SetPropagateCase(match.PropagateCase())
 		nm.SetTrigger(match.Trigger())
 		nm.SetReplace(match.Replace())
 		nm.SetWord(w)
@@ -67,7 +94,7 @@ func (m Matches) SetWord(w bool) Matches {
 
 // DictToMatches is converting a dict with the format of
 // var dict = []string{
-// 	"trigger", "replace",
+//	"trigger", "replace",
 // }
 // to Matches.
 func DictToMatches(dict []string) Matches {

@@ -69,6 +69,9 @@ matches:
 {{- range $_, $match := .Matches }}
   - trigger: "{{ $match.Trigger }}"
     replace: "{{ $match.Replace }}"
+	{{- if $match.PropagateCase }}
+    propagate_case: {{ $match.PropagateCase }}
+    {{- end -}}
 	{{- if $match.Word }}
     word: {{ $match.Word }}
     {{- end -}}
