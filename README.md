@@ -34,9 +34,21 @@ func main() {
 	matches = append(matches, m2)
 
 	m3 := espanso.NewMatch()
-	m3.SetTrigger(":cat")
-	m3.SetImagePath("/path/to/image.png")
+	m3.SetTrigger(":br")
+	m3.SetReplace("Best Regards,\nJon Snow")
 	matches = append(matches, m3)
+
+	m4 := espanso.NewMatch()
+	m4.SetTrigger("alh")
+	m4.SetReplace("although")
+	m4.SetPropagateCase(true)
+	m4.SetWord(true)
+	matches = append(matches, m4)
+
+	m5 := espanso.NewMatch()
+	m5.SetTrigger(":cat")
+	m5.SetImagePath("/path/to/image.png")
+	matches = append(matches, m5)
 
 	p := espanso.NewPackage()
 	p.SetName("my-package")
