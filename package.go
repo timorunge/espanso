@@ -68,12 +68,16 @@ parent: {{ .Parent }}
 matches:
 {{- range $_, $match := .Matches }}
   - trigger: "{{ $match.Trigger }}"
+	{{- if $match.ImagePath }}
+    image_path: "{{ $match.ImagePath }}"
+    {{- else }}
     replace: "{{ $match.Replace }}"
 	{{- if $match.PropagateCase }}
     propagate_case: {{ $match.PropagateCase }}
     {{- end -}}
 	{{- if $match.Word }}
     word: {{ $match.Word }}
+    {{- end -}}
     {{- end -}}
 {{- end -}}`
 

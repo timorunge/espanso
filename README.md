@@ -33,6 +33,11 @@ func main() {
 	m2.SetReplace("Best Regards,\nJon Snow")
 	matches = append(matches, m2)
 
+	m3 := espanso.NewMatch()
+	m3.SetTrigger(":cat")
+	m3.SetImagePath("/path/to/image.png")
+	matches = append(matches, m3)
+
 	p := espanso.NewPackage()
 	p.SetName("my-package")
 	p.SetParent("default")
@@ -54,7 +59,6 @@ func main() {
 		panic(err)
 	}
 }
-
 ```
 
 ### DictToMatches

@@ -6,6 +6,7 @@ import (
 
 // Match represents a single match for espanso.
 type Match struct {
+	imagePath     string
 	propagateCase bool
 	replace       string
 	trigger       string
@@ -15,6 +16,12 @@ type Match struct {
 // NewMatch is generating a new match.
 func NewMatch() Match {
 	return Match{}
+}
+
+// SetImagePath is setting the image_path value for a match.
+func (m *Match) SetImagePath(p string) *Match {
+	m.imagePath = p
+	return m
 }
 
 // SetPropagateCase is setting the propagate_case value for a match.
@@ -39,6 +46,11 @@ func (m *Match) SetReplace(r string) *Match {
 func (m *Match) SetWord(w bool) *Match {
 	m.word = w
 	return m
+}
+
+// ImagePath returns the imagePath value for a match.
+func (m *Match) ImagePath() string {
+	return m.imagePath
 }
 
 // PropagateCase returns the propagateCase value for a match.
@@ -69,6 +81,7 @@ func (m Matches) SetPropagateCase(p bool) Matches {
 	var matches Matches
 	for _, match := range m {
 		nm := NewMatch()
+		nm.SetImagePath(match.ImagePath())
 		nm.SetPropagateCase(p)
 		nm.SetReplace(match.Replace())
 		nm.SetTrigger(match.Trigger())
@@ -83,6 +96,7 @@ func (m Matches) SetWord(w bool) Matches {
 	var matches Matches
 	for _, match := range m {
 		nm := NewMatch()
+		nm.SetImagePath(match.ImagePath())
 		nm.SetPropagateCase(match.PropagateCase())
 		nm.SetTrigger(match.Trigger())
 		nm.SetReplace(match.Replace())
