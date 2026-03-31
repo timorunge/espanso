@@ -1,134 +1,130 @@
+// Match types and conversion helpers for espanso trigger/replace pairs.
+
 package espanso
 
 import (
-	"strings"
+	"errors"
+	"fmt"
+	"slices"
+
+	"gopkg.in/yaml.v3"
 )
 
-// Match represents a single match for espanso.
+// Match represents a single espanso match rule.
+// Either Replace or ImagePath must be set, not both.
+// If len(Triggers) == 1, the YAML key is "trigger" (string).
+// If len(Triggers) > 1, the YAML key is "triggers" (sequence).
 type Match struct {
-	imagePath     string
-	propagateCase bool
-	replace       string
-	trigger       string
-	word          bool
+	Triggers      []string
+	Replace       string
+	ImagePath     string
+	PropagateCase bool
+	Word          bool
 }
 
-// NewMatch is generating a new match.
-func NewMatch() Match {
-	return Match{}
+// Validate checks that a match is well-formed.
+func (m Match) Validate() error {
+	var errs []error
+	if len(m.Triggers) == 0 {
+		errs = append(errs, errors.New("at least one trigger is required"))
+	}
+	hasReplace := m.Replace != ""
+	hasImage := m.ImagePath != ""
+	if hasReplace && hasImage {
+		errs = append(errs, errors.New("replace and image_path are mutually exclusive"))
+	}
+	if !hasReplace && !hasImage {
+		errs = append(errs, errors.New("either replace or image_path is required"))
+	}
+	return errors.Join(errs...)
 }
 
-// SetImagePath is setting the image_path value for a match.
-func (m *Match) SetImagePath(p string) *Match {
-	m.imagePath = p
-	return m
+// MarshalYAML produces the espanso match YAML representation.
+func (m Match) MarshalYAML() (any, error) {
+	node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+
+	if len(m.Triggers) == 1 {
+		appendStringPair(node, "trigger", m.Triggers[0])
+	} else {
+		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, t := range m.Triggers {
+			seq.Content = append(seq.Content, scalarNode(t))
+		}
+		node.Content = append(node.Content, keyNode("triggers"), seq)
+	}
+
+	if m.ImagePath != "" {
+		appendStringPair(node, "image_path", m.ImagePath)
+	} else {
+		appendStringPair(node, "replace", m.Replace)
+	}
+
+	if m.PropagateCase {
+		appendBoolPair(node, "propagate_case", true)
+	}
+	if m.Word {
+		appendBoolPair(node, "word", true)
+	}
+
+	return node, nil
 }
 
-// SetPropagateCase is setting the propagate_case value for a match.
-func (m *Match) SetPropagateCase(p bool) *Match {
-	m.propagateCase = p
-	return m
-}
-
-// SetTrigger is setting the trigger value for a match.
-func (m *Match) SetTrigger(t string) *Match {
-	m.trigger = t
-	return m
-}
-
-// SetReplace is setting the replace value for a match.
-func (m *Match) SetReplace(r string) *Match {
-	m.replace = r
-	return m
-}
-
-// SetWord is setting the word value for a match.
-func (m *Match) SetWord(w bool) *Match {
-	m.word = w
-	return m
-}
-
-// ImagePath returns the imagePath value for a match.
-func (m *Match) ImagePath() string {
-	return m.imagePath
-}
-
-// PropagateCase returns the propagateCase value for a match.
-func (m *Match) PropagateCase() bool {
-	return m.propagateCase
-}
-
-// Trigger returns the trigger value for a match.
-func (m *Match) Trigger() string {
-	return toRaw(m.trigger)
-}
-
-// Replace returns the replace value for a match.
-func (m *Match) Replace() string {
-	return toRaw(m.replace)
-}
-
-// Word returns the word value for a match.
-func (m *Match) Word() bool {
-	return m.word
-}
-
-// Matches represents multiple matches for espanso.
+// Matches is an ordered slice of Match values.
 type Matches []Match
 
-// SetPropagateCase sets the propagateCase value for multiple matches.
-func (m Matches) SetPropagateCase(p bool) Matches {
-	var matches Matches
-	for _, match := range m {
-		nm := NewMatch()
-		nm.SetImagePath(match.ImagePath())
-		nm.SetPropagateCase(p)
-		nm.SetReplace(match.Replace())
-		nm.SetTrigger(match.Trigger())
-		nm.SetWord(match.Word())
-		matches = append(matches, nm)
-	}
-	return matches
-}
-
-// SetWord sets the word value for multiple matches.
+// SetWord returns a new Matches with Word set on every element.
 func (m Matches) SetWord(w bool) Matches {
-	var matches Matches
-	for _, match := range m {
-		nm := NewMatch()
-		nm.SetImagePath(match.ImagePath())
-		nm.SetPropagateCase(match.PropagateCase())
-		nm.SetTrigger(match.Trigger())
-		nm.SetReplace(match.Replace())
-		nm.SetWord(w)
-		matches = append(matches, nm)
+	out := slices.Clone(m)
+	for i := range out {
+		out[i].Word = w
 	}
-	return matches
+	return out
 }
 
-// DictToMatches is converting a dict with the format of
-// var dict = []string{
-//	"trigger", "replace",
-// }
-// to Matches.
+// SetPropagateCase returns a new Matches with PropagateCase set on every element.
+func (m Matches) SetPropagateCase(p bool) Matches {
+	out := slices.Clone(m)
+	for i := range out {
+		out[i].PropagateCase = p
+	}
+	return out
+}
+
+// DictToMatches converts a flat string slice of alternating trigger/replace
+// pairs into Matches. Panics if len(dict) is odd.
 func DictToMatches(dict []string) Matches {
-	var matches Matches
+	if len(dict)%2 != 0 {
+		panic(fmt.Sprintf("espanso: DictToMatches requires even-length slice, got %d", len(dict)))
+	}
+	matches := make(Matches, 0, len(dict)/2)
 	for i := 0; i < len(dict); i += 2 {
-		match := NewMatch()
-		match.SetTrigger(dict[i])
-		match.SetReplace(dict[i+1])
-		matches = append(matches, match)
+		matches = append(matches, Match{
+			Triggers: []string{dict[i]},
+			Replace:  dict[i+1],
+		})
 	}
 	return matches
 }
 
-// toRaw is generating pseudo "raw string literals".
-func toRaw(s string) string {
-	if strings.Contains(s, "\n") {
-		s = strings.Replace(s, "\n", "\\n", -1)
+func keyNode(key string) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+}
+
+func scalarNode(val string) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: val}
+}
+
+func appendStringPair(node *yaml.Node, key, val string) {
+	node.Content = append(node.Content, keyNode(key), scalarNode(val))
+}
+
+func appendBoolPair(node *yaml.Node, key string, val bool) {
+	v := "false"
+	if val {
+		v = "true"
 	}
-	if strings.Contains(s, "\"") {
-		s = strings.Replace(s, "\"", "\\\"", -1)
-	}
-	return s
+	node.Content = append(node.Content,
+		keyNode(key),
+		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: v},
+	)
 }

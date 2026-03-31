@@ -1,10 +1,13 @@
 # espanso
 
+[![CI](https://github.com/timorunge/espanso/actions/workflows/ci.yml/badge.svg)](https://github.com/timorunge/espanso/actions/workflows/ci.yml)
 [![Go Report](https://goreportcard.com/badge/github.com/timorunge/espanso)](https://goreportcard.com/report/github.com/timorunge/espanso)
-[![Build Status](https://travis-ci.org/timorunge/espanso.svg?branch=master)](https://travis-ci.org/timorunge/espanso)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/timorunge/espanso)](https://go.dev/)
+[![pkg.go.dev](https://pkg.go.dev/badge/github.com/timorunge/espanso.svg)](https://pkg.go.dev/github.com/timorunge/espanso)
+[![License](https://img.shields.io/github/license/timorunge/espanso)](LICENSE)
 
-`espanso` is a Go library without dependencies for creating packages for
-[espanso](https://espanso.org), the cross-platform Text Expander.
+`espanso` is a Go library for creating packages for
+[espanso](https://espanso.org), the cross-platform text expander.
 
 ## Install
 
@@ -12,106 +15,89 @@
 import "github.com/timorunge/espanso"
 ```
 
-## Examples
+## Usage
 
-### General
+### Package with matches
 
 ```go
-func main() {
-	var (
-		matches espanso.Matches
-		version = "0.1.0"
-	)
-
-	m1 := espanso.NewMatch()
-	m1.SetTrigger(":espanso")
-	m1.SetReplace("Hi there!")
-	matches = append(matches, m1)
-
-	m2 := espanso.NewMatch()
-	m2.SetTrigger(":br")
-	m2.SetReplace("Best Regards,\nJon Snow")
-	matches = append(matches, m2)
-
-	m3 := espanso.NewMatch()
-	m3.SetTrigger(":br")
-	m3.SetReplace("Best Regards,\nJon Snow")
-	matches = append(matches, m3)
-
-	m4 := espanso.NewMatch()
-	m4.SetTrigger("alh")
-	m4.SetReplace("although")
-	m4.SetPropagateCase(true)
-	m4.SetWord(true)
-	matches = append(matches, m4)
-
-	m5 := espanso.NewMatch()
-	m5.SetTrigger(":cat")
-	m5.SetImagePath("/path/to/image.png")
-	matches = append(matches, m5)
-
-	p := espanso.NewPackage()
-	p.SetName("my-package")
-	p.SetParent("default")
-	p.SetMatches(matches)
-	p.SetVersion(version)
-	if err := p.Write(); err != nil {
-		panic(err)
-	}
-
-	r := espanso.NewReadme()
-	r.SetAuthor("Timo Runge")
-	r.SetLongDesc(`Long description for my espanso package. Can be Markdown.`)
-	r.SetName(p.Name())
-	r.SetRepo("https://github.com/timorunge/espanso")
-	r.SetShortDesc("Short description for my espanso package.")
-	r.SetTitle("My Package")
-	r.SetVersion(version)
-	if err := r.Write(p.Name()); err != nil {
-		panic(err)
-	}
+p := espanso.Package{
+    Name:    "my-package",
+    Parent:  "default",
+    Version: "0.1.0",
+    Matches: espanso.Matches{
+        {Triggers: []string{":espanso"}, Replace: "Hi there!"},
+        {Triggers: []string{":br"}, Replace: "Best Regards,\nJon Snow"},
+        {Triggers: []string{"alh"}, Replace: "although", PropagateCase: true, Word: true},
+        {Triggers: []string{":cat"}, ImagePath: "/path/to/image.png"},
+    },
+}
+dir := filepath.Join(p.Name, p.Version)
+if err := p.WriteFile(dir); err != nil {
+    log.Fatal(err)
 }
 ```
 
 ### DictToMatches
 
+Convert flat string slices (e.g. from the misspell library) to matches:
+
 ```go
-func main() {
-	var (
-		matches = []string{
-			":espanso", "Hi there!",
-			":br", "Best Regards,\nJon Snow",
-		}
-		version = "0.1.0"
-	)
-
-	p := espanso.NewPackage()
-	p.SetName("my-package")
-	p.SetParent("default")
-	p.SetMatches(espanso.DictToMatches(matches))
-	p.SetVersion(version)
-	if err := p.Write(); err != nil {
-		panic(err)
-	}
-
-	r := espanso.NewReadme()
-	r.SetAuthor("Timo Runge")
-	r.SetLongDesc(`Long description for my espanso package. Can be Markdown.`)
-	r.SetName(p.Name())
-	r.SetRepo("https://github.com/timorunge/espanso")
-	r.SetShortDesc("Short description for my espanso package.")
-	r.SetTitle("My Package")
-	r.SetVersion(version)
-	if err := r.Write(p.Name()); err != nil {
-		panic(err)
-	}
+p := espanso.Package{
+    Name:    "my-package",
+    Parent:  "default",
+    Version: "0.1.0",
+    Matches: espanso.DictToMatches([]string{
+        ":espanso", "Hi there!",
+        ":br", "Best Regards,\nJon Snow",
+    }).SetWord(true).SetPropagateCase(true),
 }
+dir := filepath.Join(p.Name, p.Version)
+if err := p.WriteFile(dir); err != nil {
+    log.Fatal(err)
+}
+```
+
+### README and LICENSE
+
+```go
+r := espanso.Readme{
+    Name:      "my-package",
+    Title:     "My Package",
+    ShortDesc: "Short description for my espanso package.",
+    Version:   "0.1.0",
+    Author:    "Timo Runge",
+    Repo:      "https://github.com/timorunge/espanso",
+    LongDesc:  "Long description. Supports **Markdown**.\n",
+}
+if err := r.WriteFile("my-package"); err != nil {
+    log.Fatal(err)
+}
+
+l := espanso.BSD3Clause("2019-2026", "Timo Runge")
+if err := l.WriteFile("my-package"); err != nil {
+    log.Fatal(err)
+}
+```
+
+### io.Writer support
+
+All types implement `io.WriterTo` for flexible output:
+
+```go
+var buf bytes.Buffer
+p.WriteTo(&buf)     // write YAML to buffer
+r.WriteTo(os.Stdout) // write README to stdout
+```
+
+## Development
+
+```bash
+make check    # Run all quality gates (fmt, tidy, vet, lint, test)
+make test     # Run tests with race detector
+make lint     # Run golangci-lint
+make help     # Show all available targets
 ```
 
 ## License
 
 [BSD 3-Clause "New" or "Revised" License](LICENSE)
-
-## Author Information
-
-- Timo Runge
