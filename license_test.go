@@ -55,6 +55,20 @@ func TestLicenseConstructors(t *testing.T) {
 			wantOwner: "Apache User",
 			wantText:  "Apache License",
 		},
+		{
+			name:      "CC-BY-SA-3.0",
+			license:   CCBYSA30("2025", "CC User"),
+			wantYear:  "2025",
+			wantOwner: "CC User",
+			wantText:  "Attribution-ShareAlike 3.0 Unported",
+		},
+		{
+			name:      "CC-BY-SA-4.0",
+			license:   CCBYSA40("2026", "CC User"),
+			wantYear:  "2026",
+			wantOwner: "CC User",
+			wantText:  "Attribution-ShareAlike 4.0 International",
+		},
 	}
 
 	for _, tt := range tests {

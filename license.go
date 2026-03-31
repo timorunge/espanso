@@ -665,6 +665,29 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
   This Source Code Form is "Incompatible With Secondary Licenses", as
   defined by the Mozilla Public License, v. 2.0.`
 
+const ccBySa30Template = `Creative Commons Attribution-ShareAlike 3.0 Unported
+
+SPDX-License-Identifier: CC-BY-SA-3.0
+
+This work is licensed under the Creative Commons
+Attribution-ShareAlike 3.0 Unported License. To view a copy of this
+license, visit https://creativecommons.org/licenses/by-sa/3.0/ or send
+a letter to Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+
+Copyright (c) <year> <author>`
+
+const ccBySa40Template = `Creative Commons Attribution-ShareAlike 4.0 International
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+This work is licensed under the Creative Commons
+Attribution-ShareAlike 4.0 International License. To view a copy of
+this license, visit https://creativecommons.org/licenses/by-sa/4.0/ or
+send a letter to Creative Commons, PO Box 1866, Mountain View, CA 94042,
+USA.
+
+Copyright (c) <year> <author>`
+
 // License holds license text to be written to a LICENSE file.
 type License struct {
 	Text string
@@ -698,6 +721,16 @@ func Apache2(year, author string) License {
 // MPL2 returns a License with the Mozilla Public License 2.0 text.
 func MPL2() License {
 	return License{Text: mpl2Template}
+}
+
+// CCBYSA30 returns a License with the Creative Commons Attribution-ShareAlike 3.0 Unported text.
+func CCBYSA30(year, author string) License {
+	return applyLicense(ccBySa30Template, year, author)
+}
+
+// CCBYSA40 returns a License with the Creative Commons Attribution-ShareAlike 4.0 International text.
+func CCBYSA40(year, author string) License {
+	return applyLicense(ccBySa40Template, year, author)
 }
 
 // Validate returns an error if Text is empty.
