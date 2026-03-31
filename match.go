@@ -280,6 +280,26 @@ func (m Matches) Deduplicate() Matches {
 	return out
 }
 
+// Validate checks that all matches are well-formed and that no trigger
+// appears in more than one match.
+func (m Matches) Validate() error {
+	var errs []error
+	seen := make(map[string]int, len(m))
+	for i := range m {
+		if err := m[i].Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("match[%d]: %w", i, err))
+		}
+		for _, t := range m[i].Triggers {
+			if prev, ok := seen[t]; ok {
+				errs = append(errs, fmt.Errorf("duplicate trigger %q in match[%d] and match[%d]", t, prev, i))
+			} else {
+				seen[t] = i
+			}
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // DictToMatches converts a flat string slice of alternating trigger/replace
 // pairs into Matches. Panics if len(dict) is odd.
 func DictToMatches(dict []string) Matches {

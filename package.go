@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -84,6 +86,29 @@ func (p *Package) ReadFrom(r io.Reader) (int64, error) {
 // WriteFile creates dir/package.yml and writes the package YAML.
 func (p Package) WriteFile(dir string) error {
 	return writeFile(dir, "package.yml", p)
+}
+
+// ReadPackageDir walks dir recursively and reads every package.yml file found.
+func ReadPackageDir(dir string) ([]Package, error) {
+	var packages []Package
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || d.Name() != "package.yml" {
+			return nil
+		}
+		p, err := ReadPackageFile(path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		packages = append(packages, p)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("walk %s: %w", dir, err)
+	}
+	return packages, nil
 }
 
 // ReadPackageFile reads and decodes a package.yml file at path.

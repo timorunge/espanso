@@ -578,6 +578,63 @@ func TestMatchesDeduplicateOriginalUnmodified(t *testing.T) {
 	}
 }
 
+func TestMatchesValidate(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		matches Matches
+		wantErr bool
+	}{
+		{
+			name: "valid",
+			matches: Matches{
+				{Triggers: []string{":a"}, Replace: "A"},
+				{Triggers: []string{":b"}, Replace: "B"},
+			},
+			wantErr: false,
+		},
+		{
+			name:    "empty",
+			matches: Matches{},
+			wantErr: false,
+		},
+		{
+			name: "duplicate trigger",
+			matches: Matches{
+				{Triggers: []string{":a"}, Replace: "A"},
+				{Triggers: []string{":a"}, Replace: "A2"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate across multi-trigger matches",
+			matches: Matches{
+				{Triggers: []string{":a", ":b"}, Replace: "AB"},
+				{Triggers: []string{":c", ":b"}, Replace: "CB"},
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid match propagates",
+			matches: Matches{
+				{Triggers: []string{}, Replace: "A"},
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			err := tt.matches.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDictToMatches(t *testing.T) {
 	t.Parallel()
 

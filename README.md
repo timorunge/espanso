@@ -79,7 +79,7 @@ if err := r.WriteFile("my-package"); err != nil {
     log.Fatal(err)
 }
 
-l := espanso.BSD3Clause("2019-2026", "Timo Runge")
+l := espanso.MIT("2019-2026", "Timo Runge")
 if err := l.WriteFile("my-package"); err != nil {
     log.Fatal(err)
 }
@@ -145,9 +145,12 @@ if err := espanso.WriteAll(".", p, r, l); err != nil {
 }
 ```
 
-### Sort and Deduplicate
+### Validate, Sort, and Deduplicate
 
 ```go
+if err := matches.Validate(); err != nil {
+    log.Fatal(err) // catches invalid matches and duplicate triggers
+}
 matches = matches.Sort().Deduplicate()
 ```
 
@@ -155,6 +158,12 @@ matches = matches.Sort().Deduplicate()
 
 ```go
 p, err := espanso.ReadPackageFile("misspell-en/0.1.2/package.yml")
+```
+
+Read all packages in a directory tree:
+
+```go
+packages, err := espanso.ReadPackageDir("packages")
 ```
 
 ### io.Writer support
@@ -178,4 +187,4 @@ make help     # Show all available targets
 
 ## License
 
-[BSD 3-Clause "New" or "Revised" License](LICENSE)
+[MIT License](LICENSE)

@@ -271,6 +271,65 @@ func TestReadPackageFile(t *testing.T) {
 	}
 }
 
+func TestReadPackageDir(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	// Write two packages in different subdirectories.
+	pkg1 := Package{
+		Name: "pkg-a", Parent: "default", Version: "1.0.0",
+		Matches: Matches{{Triggers: []string{":a"}, Replace: "A"}},
+	}
+	pkg2 := Package{
+		Name: "pkg-b", Parent: "default", Version: "0.1.0",
+		Matches: Matches{{Triggers: []string{":b"}, Replace: "B"}},
+	}
+	if err := pkg1.WriteFile(filepath.Join(dir, "pkg-a", "1.0.0")); err != nil {
+		t.Fatalf("WriteFile(pkg1) error = %v", err)
+	}
+	if err := pkg2.WriteFile(filepath.Join(dir, "pkg-b", "0.1.0")); err != nil {
+		t.Fatalf("WriteFile(pkg2) error = %v", err)
+	}
+
+	packages, err := ReadPackageDir(dir)
+	if err != nil {
+		t.Fatalf("ReadPackageDir() error = %v", err)
+	}
+	if len(packages) != 2 {
+		t.Fatalf("ReadPackageDir() len = %d, want 2", len(packages))
+	}
+
+	names := map[string]bool{}
+	for _, p := range packages {
+		names[p.Name] = true
+	}
+	if !names["pkg-a"] || !names["pkg-b"] {
+		t.Errorf("ReadPackageDir() names = %v, want pkg-a and pkg-b", names)
+	}
+}
+
+func TestReadPackageDirEmpty(t *testing.T) {
+	t.Parallel()
+
+	packages, err := ReadPackageDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("ReadPackageDir() error = %v", err)
+	}
+	if len(packages) != 0 {
+		t.Errorf("ReadPackageDir() len = %d, want 0", len(packages))
+	}
+}
+
+func TestReadPackageDirNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := ReadPackageDir("/nonexistent/dir")
+	if err == nil {
+		t.Error("ReadPackageDir() expected error for missing dir, got nil")
+	}
+}
+
 func TestReadPackageFileNotFound(t *testing.T) {
 	t.Parallel()
 
