@@ -7,15 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Package represents an espanso package.yml file.
 type Package struct {
-	Name    string  `yaml:"name"`
-	Parent  string  `yaml:"parent"`
-	Matches Matches `yaml:"matches"`
+	Name       string  `yaml:"name"`
+	Parent     string  `yaml:"parent"`
+	GlobalVars []Var   `yaml:"global_vars,omitempty"`
+	Matches    Matches `yaml:"matches"`
 
 	// Version is used for the directory path only, not written to YAML.
 	Version string `yaml:"-"`
@@ -33,8 +35,13 @@ func (p Package) Validate() error {
 	if p.Version == "" {
 		errs = append(errs, errors.New("version is required"))
 	}
-	for i, m := range p.Matches {
-		if err := m.Validate(); err != nil {
+	for i, v := range p.GlobalVars {
+		if err := v.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("variable[%d]: %w", i, err))
+		}
+	}
+	for i := range p.Matches {
+		if err := p.Matches[i].Validate(); err != nil {
 			errs = append(errs, fmt.Errorf("match[%d]: %w", i, err))
 		}
 	}
@@ -61,7 +68,40 @@ func (p Package) WriteTo(w io.Writer) (int64, error) {
 	return int64(n), err
 }
 
+// ReadFrom populates p by reading and decoding YAML from r.
+// Version is not populated because it is not stored in package.yml.
+func (p *Package) ReadFrom(r io.Reader) (int64, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return 0, fmt.Errorf("read package yaml: %w", err)
+	}
+	if err := yaml.Unmarshal(data, p); err != nil {
+		return 0, fmt.Errorf("unmarshal package yaml: %w", err)
+	}
+	return int64(len(data)), nil
+}
+
 // WriteFile creates dir/package.yml and writes the package YAML.
 func (p Package) WriteFile(dir string) error {
 	return writeFile(dir, "package.yml", p)
+}
+
+// ReadPackageFile reads and decodes a package.yml file at path.
+func ReadPackageFile(path string) (Package, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Package{}, fmt.Errorf("open package file: %w", err)
+	}
+
+	var p Package
+	_, readErr := p.ReadFrom(f)
+	closeErr := f.Close()
+
+	if readErr != nil {
+		return Package{}, readErr
+	}
+	if closeErr != nil {
+		return Package{}, fmt.Errorf("close package file: %w", closeErr)
+	}
+	return p, nil
 }
