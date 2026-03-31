@@ -73,15 +73,6 @@ func TestLicenseConstructors(t *testing.T) {
 	}
 }
 
-func TestMPL2(t *testing.T) {
-	t.Parallel()
-
-	l := MPL2()
-	if !strings.Contains(l.Text, "Mozilla Public License") {
-		t.Error("MPL2 license text does not contain expected header")
-	}
-}
-
 func TestLicenseYearRange(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +80,15 @@ func TestLicenseYearRange(t *testing.T) {
 	if !strings.Contains(l.Text, "Copyright (c) 2019-2026 Timo Runge") {
 		firstLine, _, _ := strings.Cut(l.Text, "\n")
 		t.Errorf("expected year range in copyright line, got:\n%s", firstLine)
+	}
+}
+
+func TestMPL2(t *testing.T) {
+	t.Parallel()
+
+	l := MPL2()
+	if !strings.Contains(l.Text, "Mozilla Public License") {
+		t.Error("MPL2 license text does not contain expected header")
 	}
 }
 

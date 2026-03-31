@@ -35,7 +35,7 @@ func writeFile(dir, filename string, wt io.WriterTo) error {
 
 func writeAndSync(f *os.File, wt io.WriterTo) error {
 	if _, err := wt.WriteTo(f); err != nil {
-		return err
+		return fmt.Errorf("write content: %w", err)
 	}
 	if err := f.Sync(); err != nil {
 		return fmt.Errorf("sync file: %w", err)
