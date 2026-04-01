@@ -3,10 +3,13 @@
 package espanso
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"gopkg.in/yaml.v3"
 )
 
 // writeFile creates dir/filename and writes content from a WriterTo.
@@ -31,6 +34,24 @@ func writeFile(dir, filename string, wt io.WriterTo) error {
 		return fmt.Errorf("close file %s: %w", path, closeErr)
 	}
 	return nil
+}
+
+// encodeYAML marshals v to YAML with 2-space indent and writes to w.
+func encodeYAML(w io.Writer, v any) (int64, error) {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2)
+	if err := enc.Encode(v); err != nil {
+		return 0, fmt.Errorf("encode yaml: %w", err)
+	}
+	if err := enc.Close(); err != nil {
+		return 0, fmt.Errorf("close yaml encoder: %w", err)
+	}
+	n, err := w.Write(buf.Bytes())
+	if err != nil {
+		return int64(n), fmt.Errorf("write yaml: %w", err)
+	}
+	return int64(n), nil
 }
 
 func writeAndSync(f *os.File, wt io.WriterTo) error {

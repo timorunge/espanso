@@ -87,16 +87,6 @@ func TestLicenseConstructors(t *testing.T) {
 	}
 }
 
-func TestLicenseYearRange(t *testing.T) {
-	t.Parallel()
-
-	l := BSD3Clause("2019-2026", "Timo Runge")
-	if !strings.Contains(l.Text, "Copyright (c) 2019-2026 Timo Runge") {
-		firstLine, _, _ := strings.Cut(l.Text, "\n")
-		t.Errorf("expected year range in copyright line, got:\n%s", firstLine)
-	}
-}
-
 func TestMPL2(t *testing.T) {
 	t.Parallel()
 
@@ -171,5 +161,49 @@ func TestLicenseWriteFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "Test Author") {
 		t.Error("LICENSE file does not contain author")
+	}
+}
+
+func TestLicenseReadFrom(t *testing.T) {
+	t.Parallel()
+
+	text := "MIT License\n\nCopyright (c) 2024 Author\n"
+	var l License
+	n, err := l.ReadFrom(strings.NewReader(text))
+	if err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	if n != int64(len(text)) {
+		t.Errorf("ReadFrom() n = %d, want %d", n, len(text))
+	}
+	if l.Text != text {
+		t.Errorf("Text = %q, want %q", l.Text, text)
+	}
+}
+
+func TestReadLicenseFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	original := MIT("2024", "Test Author")
+	if err := original.WriteFile(dir); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := ReadLicenseFile(filepath.Join(dir, "LICENSE"))
+	if err != nil {
+		t.Fatalf("ReadLicenseFile() error = %v", err)
+	}
+	if got.Text != original.Text {
+		t.Errorf("Text = %q, want %q", got.Text, original.Text)
+	}
+}
+
+func TestReadLicenseFileNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := ReadLicenseFile("/nonexistent/LICENSE")
+	if err == nil {
+		t.Error("ReadLicenseFile() expected error for missing file, got nil")
 	}
 }

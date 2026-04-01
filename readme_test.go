@@ -113,6 +113,102 @@ func TestReadmeWriteToValidationError(t *testing.T) {
 	}
 }
 
+func TestReadmeReadFrom(t *testing.T) {
+	t.Parallel()
+
+	input := "---\n" +
+		"package_name: my-pkg\n" +
+		"package_title: My Pkg\n" +
+		"package_desc: A description.\n" +
+		"package_version: 1.0.0\n" +
+		"package_author: Author\n" +
+		"package_repo: https://example.com\n" +
+		"---\n" +
+		"# Body\n"
+
+	var r Readme
+	n, err := r.ReadFrom(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	if n != int64(len(input)) {
+		t.Errorf("ReadFrom() n = %d, want %d", n, len(input))
+	}
+	if r.Name != "my-pkg" {
+		t.Errorf("Name = %q, want %q", r.Name, "my-pkg")
+	}
+	if r.LongDesc != "# Body\n" {
+		t.Errorf("LongDesc = %q, want %q", r.LongDesc, "# Body\n")
+	}
+}
+
+func TestReadmeReadFromNoBody(t *testing.T) {
+	t.Parallel()
+
+	input := "---\n" +
+		"package_name: my-pkg\n" +
+		"package_title: My Pkg\n" +
+		"package_desc: A description.\n" +
+		"package_version: 1.0.0\n" +
+		"package_author: Author\n" +
+		"package_repo: https://example.com\n" +
+		"---\n"
+
+	var r Readme
+	if _, err := r.ReadFrom(strings.NewReader(input)); err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+	if r.LongDesc != "" {
+		t.Errorf("LongDesc = %q, want empty", r.LongDesc)
+	}
+}
+
+func TestReadmeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := Readme{
+		Name:      "my-package",
+		Title:     "My Package",
+		ShortDesc: "A short description.",
+		Version:   "1.0.0",
+		Author:    "Test Author",
+		Repo:      "https://github.com/test/repo",
+		LongDesc:  "# My Package\n\nLong description here.\n",
+	}
+
+	var buf bytes.Buffer
+	if _, err := original.WriteTo(&buf); err != nil {
+		t.Fatalf("WriteTo() error = %v", err)
+	}
+
+	var decoded Readme
+	if _, err := decoded.ReadFrom(&buf); err != nil {
+		t.Fatalf("ReadFrom() error = %v", err)
+	}
+
+	if decoded.Name != original.Name {
+		t.Errorf("Name = %q, want %q", decoded.Name, original.Name)
+	}
+	if decoded.Title != original.Title {
+		t.Errorf("Title = %q, want %q", decoded.Title, original.Title)
+	}
+	if decoded.ShortDesc != original.ShortDesc {
+		t.Errorf("ShortDesc = %q, want %q", decoded.ShortDesc, original.ShortDesc)
+	}
+	if decoded.Version != original.Version {
+		t.Errorf("Version = %q, want %q", decoded.Version, original.Version)
+	}
+	if decoded.Author != original.Author {
+		t.Errorf("Author = %q, want %q", decoded.Author, original.Author)
+	}
+	if decoded.Repo != original.Repo {
+		t.Errorf("Repo = %q, want %q", decoded.Repo, original.Repo)
+	}
+	if decoded.LongDesc != original.LongDesc {
+		t.Errorf("LongDesc = %q, want %q", decoded.LongDesc, original.LongDesc)
+	}
+}
+
 func TestReadmeWriteFile(t *testing.T) {
 	t.Parallel()
 
@@ -135,5 +231,39 @@ func TestReadmeWriteFile(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "package_name: my-package") {
 		t.Errorf("README.md missing expected content\n\ngot:\n%s", data)
+	}
+}
+
+func TestReadReadmeFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	original := Readme{
+		Name: "my-package", Title: "My Package", ShortDesc: "A short description.",
+		Version: "1.0.0", Author: "Test Author", Repo: "https://example.com",
+		LongDesc: "# Body\n",
+	}
+	if err := original.WriteFile(dir); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := ReadReadmeFile(filepath.Join(dir, "README.md"))
+	if err != nil {
+		t.Fatalf("ReadReadmeFile() error = %v", err)
+	}
+	if got.Name != "my-package" {
+		t.Errorf("Name = %q, want %q", got.Name, "my-package")
+	}
+	if got.LongDesc != "# Body\n" {
+		t.Errorf("LongDesc = %q, want %q", got.LongDesc, "# Body\n")
+	}
+}
+
+func TestReadReadmeFileNotFound(t *testing.T) {
+	t.Parallel()
+
+	_, err := ReadReadmeFile("/nonexistent/README.md")
+	if err == nil {
+		t.Error("ReadReadmeFile() expected error for missing file, got nil")
 	}
 }

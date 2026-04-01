@@ -4,6 +4,7 @@ package espanso
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,6 +51,26 @@ func TestPackageValidate(t *testing.T) {
 				Version:    "1.0.0",
 				GlobalVars: []Var{{Name: "x"}},
 				Matches:    Matches{{Triggers: []string{":hi"}, Replace: "Hello"}},
+			},
+			wantErr: true,
+		},
+		{
+			name: "zero matches",
+			pkg: Package{
+				Name: "test-pkg", Parent: "default", Version: "1.0.0",
+			},
+			wantErr: true,
+		},
+		{
+			name: "duplicate triggers",
+			pkg: Package{
+				Name:    "test-pkg",
+				Parent:  "default",
+				Version: "1.0.0",
+				Matches: Matches{
+					{Triggers: []string{":hi"}, Replace: "Hello"},
+					{Triggers: []string{":hi"}, Replace: "Hey"},
+				},
 			},
 			wantErr: true,
 		},
@@ -248,29 +269,6 @@ func TestPackageWriteFile(t *testing.T) {
 	}
 }
 
-func TestReadPackageFile(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	pkg := Package{
-		Name:    "test-pkg",
-		Parent:  "default",
-		Version: "1.0.0",
-		Matches: Matches{{Triggers: []string{":hi"}, Replace: "Hello"}},
-	}
-	if err := pkg.WriteFile(dir); err != nil {
-		t.Fatalf("WriteFile() error = %v", err)
-	}
-
-	got, err := ReadPackageFile(filepath.Join(dir, "package.yml"))
-	if err != nil {
-		t.Fatalf("ReadPackageFile() error = %v", err)
-	}
-	if got.Name != "test-pkg" {
-		t.Errorf("Name = %q, want %q", got.Name, "test-pkg")
-	}
-}
-
 func TestReadPackageDir(t *testing.T) {
 	t.Parallel()
 
@@ -292,7 +290,7 @@ func TestReadPackageDir(t *testing.T) {
 		t.Fatalf("WriteFile(pkg2) error = %v", err)
 	}
 
-	packages, err := ReadPackageDir(dir)
+	packages, err := ReadPackageDir(context.Background(), dir)
 	if err != nil {
 		t.Fatalf("ReadPackageDir() error = %v", err)
 	}
@@ -312,7 +310,7 @@ func TestReadPackageDir(t *testing.T) {
 func TestReadPackageDirEmpty(t *testing.T) {
 	t.Parallel()
 
-	packages, err := ReadPackageDir(t.TempDir())
+	packages, err := ReadPackageDir(context.Background(), t.TempDir())
 	if err != nil {
 		t.Fatalf("ReadPackageDir() error = %v", err)
 	}
@@ -324,9 +322,53 @@ func TestReadPackageDirEmpty(t *testing.T) {
 func TestReadPackageDirNotFound(t *testing.T) {
 	t.Parallel()
 
-	_, err := ReadPackageDir("/nonexistent/dir")
+	_, err := ReadPackageDir(context.Background(), "/nonexistent/dir")
 	if err == nil {
 		t.Error("ReadPackageDir() expected error for missing dir, got nil")
+	}
+}
+
+func TestReadPackageDirContextCancelled(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pkg := Package{
+		Name: "test", Parent: "default", Version: "1.0.0",
+		Matches: Matches{{Triggers: []string{":a"}, Replace: "A"}},
+	}
+	if err := pkg.WriteFile(filepath.Join(dir, "test", "1.0.0")); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := ReadPackageDir(ctx, dir)
+	if err == nil {
+		t.Error("ReadPackageDir() expected context error, got nil")
+	}
+}
+
+func TestReadPackageFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	pkg := Package{
+		Name:    "test-pkg",
+		Parent:  "default",
+		Version: "1.0.0",
+		Matches: Matches{{Triggers: []string{":hi"}, Replace: "Hello"}},
+	}
+	if err := pkg.WriteFile(dir); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
+	}
+
+	got, err := ReadPackageFile(filepath.Join(dir, "package.yml"))
+	if err != nil {
+		t.Fatalf("ReadPackageFile() error = %v", err)
+	}
+	if got.Name != "test-pkg" {
+		t.Errorf("Name = %q, want %q", got.Name, "test-pkg")
 	}
 }
 

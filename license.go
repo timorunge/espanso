@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 )
 
@@ -99,8 +100,7 @@ LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
 OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.`
 
-const apache2Template = `
-                                 Apache License
+const apache2Template = `                                 Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
 
@@ -719,6 +719,7 @@ func Apache2(year, author string) License {
 }
 
 // MPL2 returns a License with the Mozilla Public License 2.0 text.
+// MPL 2.0 does not include a copyright notice, so no parameters are needed.
 func MPL2() License {
 	return License{Text: mpl2Template}
 }
@@ -747,12 +748,45 @@ func (l License) WriteTo(w io.Writer) (int64, error) {
 		return 0, fmt.Errorf("validate license: %w", err)
 	}
 	n, err := io.WriteString(w, l.Text)
-	return int64(n), err
+	if err != nil {
+		return int64(n), fmt.Errorf("write license: %w", err)
+	}
+	return int64(n), nil
 }
 
 // WriteFile creates dir/LICENSE and writes the license text.
 func (l License) WriteFile(dir string) error {
 	return writeFile(dir, "LICENSE", l)
+}
+
+// ReadFrom populates l by reading all bytes from r as license text.
+func (l *License) ReadFrom(r io.Reader) (int64, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return 0, fmt.Errorf("read license: %w", err)
+	}
+	l.Text = string(data)
+	return int64(len(data)), nil
+}
+
+// ReadLicenseFile reads a LICENSE file at path and returns its content.
+func ReadLicenseFile(path string) (License, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return License{}, fmt.Errorf("open license file: %w", err)
+	}
+
+	var l License
+	_, readErr := l.ReadFrom(f)
+	closeErr := f.Close()
+
+	if readErr != nil {
+		return License{}, readErr
+	}
+	if closeErr != nil {
+		return License{}, fmt.Errorf("close license file: %w", closeErr)
+	}
+	return l, nil
 }
 
 func applyLicense(tmpl, year, author string) License {

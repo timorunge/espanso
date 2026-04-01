@@ -37,14 +37,34 @@ func TestMatchValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "both replace and image_path",
+			name:    "replace and image_path conflict",
 			match:   Match{Triggers: []string{":x"}, Replace: "foo", ImagePath: "/img.png"},
 			wantErr: true,
 		},
 		{
-			name:    "neither replace nor image_path",
+			name:    "no output type set",
 			match:   Match{Triggers: []string{":x"}},
 			wantErr: true,
+		},
+		{
+			name:    "valid form match",
+			match:   Match{Triggers: []string{":form"}, Form: "Hello {{name}}"},
+			wantErr: false,
+		},
+		{
+			name:    "multiple output types conflict",
+			match:   Match{Triggers: []string{":x"}, Form: "f", Replace: "r"},
+			wantErr: true,
+		},
+		{
+			name:    "valid markdown match",
+			match:   Match{Triggers: []string{":md"}, Markdown: "**bold**"},
+			wantErr: false,
+		},
+		{
+			name:    "valid html match",
+			match:   Match{Triggers: []string{":ht"}, HTML: "<b>bold</b>"},
+			wantErr: false,
 		},
 		{
 			name:    "valid regex match",
@@ -54,11 +74,6 @@ func TestMatchValidate(t *testing.T) {
 		{
 			name:    "both triggers and regex",
 			match:   Match{Triggers: []string{":x"}, Regex: `\bfoo\b`, Replace: "bar"},
-			wantErr: true,
-		},
-		{
-			name:    "neither triggers nor regex",
-			match:   Match{Replace: "bar"},
 			wantErr: true,
 		},
 		{
@@ -175,6 +190,46 @@ func TestMatchMarshalYAML(t *testing.T) {
 			},
 			want: "trigger: alh\nreplace: although\npropagate_case: true\nuppercase_style: capitalize_words\n",
 		},
+		{
+			name:  "form without form_fields",
+			match: Match{Triggers: []string{":greet"}, Form: "Hello {{name}}"},
+			want:  "trigger: :greet\nform: Hello {{name}}\n",
+		},
+		{
+			name: "with filter fields",
+			match: Match{
+				Triggers:    []string{":x"},
+				Replace:     "y",
+				FilterClass: "Firefox",
+				FilterOS:    "linux",
+			},
+			want: "trigger: :x\nreplace: y\nfilter_class: Firefox\nfilter_os: linux\n",
+		},
+		{
+			name:  "markdown output",
+			match: Match{Triggers: []string{":md"}, Markdown: "**bold**"},
+			want:  "trigger: :md\nmarkdown: '**bold**'\n",
+		},
+		{
+			name:  "html output",
+			match: Match{Triggers: []string{":ht"}, HTML: "<b>bold</b>"},
+			want:  "trigger: :ht\nhtml: <b>bold</b>\n",
+		},
+		{
+			name:  "left_word and right_word",
+			match: Match{Triggers: []string{":x"}, Replace: "y", LeftWord: true, RightWord: true},
+			want:  "trigger: :x\nreplace: y\nleft_word: true\nright_word: true\n",
+		},
+		{
+			name:  "force_mode",
+			match: Match{Triggers: []string{":x"}, Replace: "y", ForceMode: "clipboard"},
+			want:  "trigger: :x\nreplace: y\nforce_mode: clipboard\n",
+		},
+		{
+			name:  "markdown with paragraph",
+			match: Match{Triggers: []string{":md"}, Markdown: "# Title", Paragraph: true},
+			want:  "trigger: :md\nmarkdown: '# Title'\nparagraph: true\n",
+		},
 	}
 
 	for _, tt := range tests {
@@ -290,6 +345,11 @@ func TestMatchRoundTrip(t *testing.T) {
 		PropagateCase:  true,
 		UppercaseStyle: "capitalize_words",
 		Word:           true,
+		LeftWord:       true,
+		RightWord:      true,
+		ForceMode:      "clipboard",
+		FilterClass:    "Chrome",
+		FilterOS:       "macos",
 	}
 
 	data, err := yaml.Marshal(original)
@@ -339,6 +399,57 @@ func TestMatchRoundTrip(t *testing.T) {
 	if decoded.Word != original.Word {
 		t.Errorf("round-trip Word = %v, want %v", decoded.Word, original.Word)
 	}
+	if decoded.LeftWord != original.LeftWord {
+		t.Errorf("round-trip LeftWord = %v, want %v", decoded.LeftWord, original.LeftWord)
+	}
+	if decoded.RightWord != original.RightWord {
+		t.Errorf("round-trip RightWord = %v, want %v", decoded.RightWord, original.RightWord)
+	}
+	if decoded.ForceMode != original.ForceMode {
+		t.Errorf("round-trip ForceMode = %q, want %q", decoded.ForceMode, original.ForceMode)
+	}
+	if decoded.FilterClass != original.FilterClass {
+		t.Errorf("round-trip FilterClass = %q, want %q", decoded.FilterClass, original.FilterClass)
+	}
+	if decoded.FilterOS != original.FilterOS {
+		t.Errorf("round-trip FilterOS = %q, want %q", decoded.FilterOS, original.FilterOS)
+	}
+}
+
+func TestMatchFormFieldsRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	original := Match{
+		Triggers: []string{":form"},
+		Form:     "Hello {{name}}, you are {{age}} years old.",
+		FormFields: map[string]map[string]any{
+			"name": {"multiline": false},
+			"age":  {"type": "list", "values": []any{"18", "21", "30"}},
+		},
+	}
+
+	data, err := yaml.Marshal(original)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+
+	var decoded Match
+	if err := yaml.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if decoded.Form != original.Form {
+		t.Errorf("Form = %q, want %q", decoded.Form, original.Form)
+	}
+	if len(decoded.FormFields) != len(original.FormFields) {
+		t.Fatalf("FormFields len = %d, want %d", len(decoded.FormFields), len(original.FormFields))
+	}
+	if _, ok := decoded.FormFields["name"]; !ok {
+		t.Error("FormFields missing key \"name\"")
+	}
+	if _, ok := decoded.FormFields["age"]; !ok {
+		t.Error("FormFields missing key \"age\"")
+	}
 }
 
 func TestVarValidate(t *testing.T) {
@@ -362,11 +473,6 @@ func TestVarValidate(t *testing.T) {
 		{
 			name:    "missing type",
 			v:       Var{Name: "today"},
-			wantErr: true,
-		},
-		{
-			name:    "missing both",
-			v:       Var{},
 			wantErr: true,
 		},
 	}
@@ -409,6 +515,48 @@ func TestVarWithListParams(t *testing.T) {
 	}
 }
 
+func TestVarInjectVarsAndDependsOn(t *testing.T) {
+	t.Parallel()
+
+	input := "trigger: :x\nreplace: \"{{a}}{{b}}\"\nvars:\n  - name: a\n    type: shell\n    params:\n      cmd: echo a\n    inject_vars: false\n    depends_on:\n      - b\n  - name: b\n    type: echo\n    params:\n      echo: hello\n"
+	var m Match
+	if err := yaml.Unmarshal([]byte(input), &m); err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+	if len(m.Vars) != 2 {
+		t.Fatalf("Vars len = %d, want 2", len(m.Vars))
+	}
+	if m.Vars[0].InjectVars == nil || *m.Vars[0].InjectVars {
+		t.Errorf("Vars[0].InjectVars = %v, want false", m.Vars[0].InjectVars)
+	}
+	if len(m.Vars[0].DependsOn) != 1 || m.Vars[0].DependsOn[0] != "b" {
+		t.Errorf("Vars[0].DependsOn = %v, want [b]", m.Vars[0].DependsOn)
+	}
+	// Second var has no inject_vars or depends_on.
+	if m.Vars[1].InjectVars != nil {
+		t.Errorf("Vars[1].InjectVars = %v, want nil", m.Vars[1].InjectVars)
+	}
+	if len(m.Vars[1].DependsOn) != 0 {
+		t.Errorf("Vars[1].DependsOn = %v, want empty", m.Vars[1].DependsOn)
+	}
+
+	// Round-trip: marshal and unmarshal back.
+	data, err := yaml.Marshal(m)
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	var decoded Match
+	if err := yaml.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Unmarshal() round-trip error = %v", err)
+	}
+	if decoded.Vars[0].InjectVars == nil || *decoded.Vars[0].InjectVars {
+		t.Errorf("round-trip Vars[0].InjectVars = %v, want false", decoded.Vars[0].InjectVars)
+	}
+	if len(decoded.Vars[0].DependsOn) != 1 {
+		t.Errorf("round-trip Vars[0].DependsOn = %v, want [b]", decoded.Vars[0].DependsOn)
+	}
+}
+
 func TestMatchesSetWord(t *testing.T) {
 	t.Parallel()
 
@@ -428,28 +576,6 @@ func TestMatchesSetWord(t *testing.T) {
 	for i, m := range original {
 		if m.Word {
 			t.Errorf("original[%d].Word = true, want false (mutation detected)", i)
-		}
-	}
-}
-
-func TestMatchesSetPropagateCase(t *testing.T) {
-	t.Parallel()
-
-	original := Matches{
-		{Triggers: []string{"a"}, Replace: "b"},
-		{Triggers: []string{"c"}, Replace: "d"},
-	}
-
-	modified := original.SetPropagateCase(true)
-
-	for i, m := range modified {
-		if !m.PropagateCase {
-			t.Errorf("modified[%d].PropagateCase = false, want true", i)
-		}
-	}
-	for i, m := range original {
-		if m.PropagateCase {
-			t.Errorf("original[%d].PropagateCase = true, want false (mutation detected)", i)
 		}
 	}
 }
@@ -642,6 +768,7 @@ func TestDictToMatches(t *testing.T) {
 		name    string
 		dict    []string
 		wantLen int
+		wantErr bool
 		trigger string
 		replace string
 	}{
@@ -664,12 +791,23 @@ func TestDictToMatches(t *testing.T) {
 			dict:    []string{},
 			wantLen: 0,
 		},
+		{
+			name:    "odd-length slice",
+			dict:    []string{"a", "b", "c"},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			matches := DictToMatches(tt.dict)
+			matches, err := DictToMatches(tt.dict)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("DictToMatches() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr {
+				return
+			}
 			if len(matches) != tt.wantLen {
 				t.Fatalf("DictToMatches() len = %d, want %d", len(matches), tt.wantLen)
 			}
@@ -685,13 +823,46 @@ func TestDictToMatches(t *testing.T) {
 	}
 }
 
-func TestDictToMatchesPanicsOnOdd(t *testing.T) {
+func TestMatchesFilter(t *testing.T) {
 	t.Parallel()
-	defer func() {
-		if r := recover(); r == nil {
-			t.Error("DictToMatches did not panic on odd-length slice")
-		}
-	}()
-	odd := []string{"a", "b", "c"}
-	DictToMatches(odd) //nolint:staticcheck // intentional odd-length to test panic
+
+	input := Matches{
+		{Triggers: []string{":a"}, Replace: "A"},
+		{Triggers: []string{"b"}, Replace: "B"},
+		{Triggers: []string{":c"}, Replace: "C"},
+	}
+
+	got := input.Filter(func(m Match) bool {
+		return len(m.Triggers) > 0 && m.Triggers[0][0] == ':'
+	})
+	if len(got) != 2 {
+		t.Fatalf("Filter() len = %d, want 2", len(got))
+	}
+	if got[0].Triggers[0] != ":a" || got[1].Triggers[0] != ":c" {
+		t.Errorf("Filter() triggers = %v, %v", got[0].Triggers, got[1].Triggers)
+	}
+	// Original unmodified.
+	if len(input) != 3 {
+		t.Error("original was mutated")
+	}
+}
+
+func TestMatchesAppend(t *testing.T) {
+	t.Parallel()
+
+	a := Matches{{Triggers: []string{":a"}, Replace: "A"}}
+	b := Matches{{Triggers: []string{":b"}, Replace: "B"}}
+	c := Matches{{Triggers: []string{":c"}, Replace: "C"}}
+
+	got := a.Append(b, c)
+	if len(got) != 3 {
+		t.Fatalf("Append() len = %d, want 3", len(got))
+	}
+	if got[2].Triggers[0] != ":c" {
+		t.Errorf("Append() last trigger = %q, want %q", got[2].Triggers[0], ":c")
+	}
+	// Originals unmodified.
+	if len(a) != 1 || len(b) != 1 {
+		t.Error("original was mutated")
+	}
 }

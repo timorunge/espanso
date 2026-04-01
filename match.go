@@ -3,28 +3,52 @@
 package espanso
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
 // Match represents a single espanso match rule.
-// Either Replace or ImagePath must be set, not both.
+// Exactly one output type must be set: Replace, ImagePath, Markdown, HTML, or Form.
 // Either Triggers or Regex must be set, not both.
 type Match struct {
-	Triggers       []string
-	Regex          string
-	Replace        string
-	ImagePath      string
-	Vars           []Var
-	Label          string
-	SearchTerms    []string
-	PropagateCase  bool
-	UppercaseStyle string
-	Word           bool
+	// Trigger input (exactly one required).
+	Triggers []string // Text triggers.
+	Regex    string   // Regular expression trigger.
+
+	// Output (exactly one required).
+	Replace    string                    // Static text replacement.
+	ImagePath  string                    // Image file path.
+	Markdown   string                    // Markdown-formatted replacement.
+	HTML       string                    // Raw HTML replacement.
+	Form       string                    // Form layout with {{field}} placeholders.
+	FormFields map[string]map[string]any // Per-field form control configuration.
+
+	// Variables.
+	Vars []Var
+
+	// UI hints.
+	Label       string   // Description shown in espanso search bar.
+	SearchTerms []string // Additional keywords for search.
+
+	// Behavior modifiers.
+	PropagateCase  bool   // Mirror trigger casing in replacement.
+	UppercaseStyle string // Capitalization style: "uppercase", "capitalize", "capitalize_words".
+	Word           bool   // Trigger only at word boundaries.
+	LeftWord       bool   // Trigger only when left side is a word boundary.
+	RightWord      bool   // Trigger only when right side is a word boundary.
+	ForceMode      string // Injection backend: "clipboard" or "keys".
+	Paragraph      bool   // Prevent extra newlines in markdown output.
+
+	// Context filters.
+	FilterClass string // Restrict to window class.
+	FilterTitle string // Restrict to window title.
+	FilterExec  string // Restrict to executable name.
+	FilterOS    string // Restrict to OS: "linux", "macos", "windows".
 }
 
 // Validate checks that a match is well-formed.
@@ -40,13 +64,17 @@ func (m Match) Validate() error {
 		errs = append(errs, errors.New("either triggers or regex is required"))
 	}
 
-	hasReplace := m.Replace != ""
-	hasImage := m.ImagePath != ""
-	if hasReplace && hasImage {
-		errs = append(errs, errors.New("replace and image_path are mutually exclusive"))
+	outputCount := 0
+	for _, s := range []string{m.Replace, m.ImagePath, m.Markdown, m.HTML, m.Form} {
+		if s != "" {
+			outputCount++
+		}
 	}
-	if !hasReplace && !hasImage {
-		errs = append(errs, errors.New("either replace or image_path is required"))
+	switch {
+	case outputCount > 1:
+		errs = append(errs, errors.New("replace, image_path, markdown, html, and form are mutually exclusive"))
+	case outputCount == 0:
+		errs = append(errs, errors.New("one of replace, image_path, markdown, html, or form is required"))
 	}
 
 	for i, v := range m.Vars {
@@ -66,85 +94,68 @@ func (m Match) Validate() error {
 func (m Match) MarshalYAML() (any, error) {
 	node := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 
-	switch {
-	case m.Regex != "":
-		appendStringPair(node, "regex", m.Regex)
-	case len(m.Triggers) == 1:
-		appendStringPair(node, "trigger", m.Triggers[0])
-	default:
-		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		for _, t := range m.Triggers {
-			seq.Content = append(seq.Content, scalarNode(t))
-		}
-		node.Content = append(node.Content, keyNode("triggers"), seq)
+	marshalTriggerInput(node, m)
+
+	if err := marshalOutput(node, m); err != nil {
+		return nil, err
+	}
+	if err := marshalVars(node, m.Vars); err != nil {
+		return nil, err
 	}
 
-	if m.ImagePath != "" {
-		appendStringPair(node, "image_path", m.ImagePath)
-	} else {
-		appendStringPair(node, "replace", m.Replace)
-	}
-
-	if len(m.Vars) > 0 {
-		varsNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		for _, v := range m.Vars {
-			varNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-			appendStringPair(varNode, "name", v.Name)
-			appendStringPair(varNode, "type", v.Type)
-			if len(v.Params) > 0 {
-				paramsNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-				for pk, pv := range v.Params {
-					valNode := &yaml.Node{}
-					if err := valNode.Encode(pv); err != nil {
-						return nil, fmt.Errorf("encode var param %q: %w", pk, err)
-					}
-					paramsNode.Content = append(paramsNode.Content, keyNode(pk), valNode)
-				}
-				varNode.Content = append(varNode.Content, keyNode("params"), paramsNode)
-			}
-			varsNode.Content = append(varsNode.Content, varNode)
-		}
-		node.Content = append(node.Content, keyNode("vars"), varsNode)
-	}
-
-	if m.Label != "" {
-		appendStringPair(node, "label", m.Label)
-	}
-
-	if len(m.SearchTerms) > 0 {
-		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
-		for _, term := range m.SearchTerms {
-			seq.Content = append(seq.Content, scalarNode(term))
-		}
-		node.Content = append(node.Content, keyNode("search_terms"), seq)
-	}
+	appendOptionalString(node, "label", m.Label)
+	appendOptionalStringSeq(node, "search_terms", m.SearchTerms)
 
 	if m.PropagateCase {
 		appendBoolPair(node, "propagate_case", true)
 	}
-	if m.UppercaseStyle != "" {
-		appendStringPair(node, "uppercase_style", m.UppercaseStyle)
-	}
+	appendOptionalString(node, "uppercase_style", m.UppercaseStyle)
 	if m.Word {
 		appendBoolPair(node, "word", true)
 	}
+	if m.LeftWord {
+		appendBoolPair(node, "left_word", true)
+	}
+	if m.RightWord {
+		appendBoolPair(node, "right_word", true)
+	}
+	appendOptionalString(node, "force_mode", m.ForceMode)
+	if m.Paragraph {
+		appendBoolPair(node, "paragraph", true)
+	}
+	appendOptionalString(node, "filter_class", m.FilterClass)
+	appendOptionalString(node, "filter_title", m.FilterTitle)
+	appendOptionalString(node, "filter_exec", m.FilterExec)
+	appendOptionalString(node, "filter_os", m.FilterOS)
 
 	return node, nil
 }
 
 // matchYAML is the intermediate type for unmarshaling YAML into a Match.
 type matchYAML struct {
-	Trigger        string   `yaml:"trigger"`
-	Triggers       []string `yaml:"triggers"`
-	Regex          string   `yaml:"regex"`
-	Replace        string   `yaml:"replace"`
-	ImagePath      string   `yaml:"image_path"`
-	Vars           []Var    `yaml:"vars"`
-	Label          string   `yaml:"label"`
-	SearchTerms    []string `yaml:"search_terms"`
-	PropagateCase  bool     `yaml:"propagate_case"`
-	UppercaseStyle string   `yaml:"uppercase_style"`
-	Word           bool     `yaml:"word"`
+	Trigger        string                    `yaml:"trigger"`
+	Triggers       []string                  `yaml:"triggers"`
+	Regex          string                    `yaml:"regex"`
+	Replace        string                    `yaml:"replace"`
+	ImagePath      string                    `yaml:"image_path"`
+	Markdown       string                    `yaml:"markdown"`
+	HTML           string                    `yaml:"html"`
+	Form           string                    `yaml:"form"`
+	FormFields     map[string]map[string]any `yaml:"form_fields"`
+	Vars           []Var                     `yaml:"vars"`
+	Label          string                    `yaml:"label"`
+	SearchTerms    []string                  `yaml:"search_terms"`
+	PropagateCase  bool                      `yaml:"propagate_case"`
+	UppercaseStyle string                    `yaml:"uppercase_style"`
+	Word           bool                      `yaml:"word"`
+	LeftWord       bool                      `yaml:"left_word"`
+	RightWord      bool                      `yaml:"right_word"`
+	ForceMode      string                    `yaml:"force_mode"`
+	Paragraph      bool                      `yaml:"paragraph"`
+	FilterClass    string                    `yaml:"filter_class"`
+	FilterTitle    string                    `yaml:"filter_title"`
+	FilterExec     string                    `yaml:"filter_exec"`
+	FilterOS       string                    `yaml:"filter_os"`
 }
 
 // UnmarshalYAML populates m from a YAML mapping node, handling both the
@@ -182,20 +193,34 @@ func (m *Match) UnmarshalYAML(value *yaml.Node) error {
 	m.Regex = raw.Regex
 	m.Replace = raw.Replace
 	m.ImagePath = raw.ImagePath
+	m.Markdown = raw.Markdown
+	m.HTML = raw.HTML
+	m.Form = raw.Form
+	m.FormFields = raw.FormFields
 	m.Vars = raw.Vars
 	m.Label = raw.Label
 	m.SearchTerms = raw.SearchTerms
 	m.PropagateCase = raw.PropagateCase
 	m.UppercaseStyle = raw.UppercaseStyle
 	m.Word = raw.Word
+	m.LeftWord = raw.LeftWord
+	m.RightWord = raw.RightWord
+	m.ForceMode = raw.ForceMode
+	m.Paragraph = raw.Paragraph
+	m.FilterClass = raw.FilterClass
+	m.FilterTitle = raw.FilterTitle
+	m.FilterExec = raw.FilterExec
+	m.FilterOS = raw.FilterOS
 	return nil
 }
 
 // Var represents an espanso variable definition.
 type Var struct {
-	Name   string         `yaml:"name"`
-	Type   string         `yaml:"type"`
-	Params map[string]any `yaml:"params,omitempty"`
+	Name       string         `yaml:"name"`                  // Variable name referenced in {{name}} placeholders.
+	Type       string         `yaml:"type"`                  // Extension type: "date", "echo", "random", "choice", "clipboard", "shell", "script".
+	Params     map[string]any `yaml:"params,omitempty"`      // Extension-specific parameters.
+	InjectVars *bool          `yaml:"inject_vars,omitempty"` // Set to false to suppress variable injection in Params. Nil means unset (espanso default: true).
+	DependsOn  []string       `yaml:"depends_on,omitempty"`  // Explicit evaluation order dependencies.
 }
 
 // Validate returns an error if Name or Type is empty.
@@ -240,6 +265,33 @@ func (m Matches) SetUppercaseStyle(s string) Matches {
 	return out
 }
 
+// SetLeftWord returns a new Matches with LeftWord set on every element.
+func (m Matches) SetLeftWord(lw bool) Matches {
+	out := slices.Clone(m)
+	for i := range out {
+		out[i].LeftWord = lw
+	}
+	return out
+}
+
+// SetRightWord returns a new Matches with RightWord set on every element.
+func (m Matches) SetRightWord(rw bool) Matches {
+	out := slices.Clone(m)
+	for i := range out {
+		out[i].RightWord = rw
+	}
+	return out
+}
+
+// SetForceMode returns a new Matches with ForceMode set on every element.
+func (m Matches) SetForceMode(mode string) Matches {
+	out := slices.Clone(m)
+	for i := range out {
+		out[i].ForceMode = mode
+	}
+	return out
+}
+
 // Sort returns a new Matches sorted alphabetically by each match's first trigger.
 func (m Matches) Sort() Matches {
 	out := slices.Clone(m)
@@ -251,7 +303,7 @@ func (m Matches) Sort() Matches {
 		if len(b.Triggers) > 0 {
 			kb = b.Triggers[0]
 		}
-		return strings.Compare(ka, kb)
+		return cmp.Compare(ka, kb)
 	})
 	return out
 }
@@ -300,11 +352,28 @@ func (m Matches) Validate() error {
 	return errors.Join(errs...)
 }
 
+// Filter returns a new Matches containing only elements where fn returns true.
+func (m Matches) Filter(fn func(Match) bool) Matches {
+	out := make(Matches, 0, len(m))
+	for i := range m {
+		if fn(m[i]) {
+			out = append(out, m[i])
+		}
+	}
+	return out
+}
+
+// Append returns a new Matches concatenating the receiver with all others.
+func (m Matches) Append(others ...Matches) Matches {
+	all := append([]Matches{m}, others...)
+	return slices.Concat(all...)
+}
+
 // DictToMatches converts a flat string slice of alternating trigger/replace
-// pairs into Matches. Panics if len(dict) is odd.
-func DictToMatches(dict []string) Matches {
+// pairs into Matches. Returns an error if len(dict) is odd.
+func DictToMatches(dict []string) (Matches, error) {
 	if len(dict)%2 != 0 {
-		panic(fmt.Sprintf("espanso: DictToMatches requires even-length slice, got %d", len(dict)))
+		return nil, fmt.Errorf("espanso: DictToMatches requires even-length slice, got %d", len(dict))
 	}
 	matches := make(Matches, 0, len(dict)/2)
 	for i := 0; i < len(dict); i += 2 {
@@ -313,7 +382,7 @@ func DictToMatches(dict []string) Matches {
 			Replace:  dict[i+1],
 		})
 	}
-	return matches
+	return matches, nil
 }
 
 func keyNode(key string) *yaml.Node {
@@ -337,4 +406,97 @@ func appendBoolPair(node *yaml.Node, key string, val bool) {
 		keyNode(key),
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: v},
 	)
+}
+
+func appendOptionalString(node *yaml.Node, key, val string) {
+	if val != "" {
+		appendStringPair(node, key, val)
+	}
+}
+
+func appendOptionalStringSeq(node *yaml.Node, key string, vals []string) {
+	if len(vals) == 0 {
+		return
+	}
+	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, v := range vals {
+		seq.Content = append(seq.Content, scalarNode(v))
+	}
+	node.Content = append(node.Content, keyNode(key), seq)
+}
+
+func marshalTriggerInput(node *yaml.Node, m Match) {
+	switch {
+	case m.Regex != "":
+		appendStringPair(node, "regex", m.Regex)
+	case len(m.Triggers) == 1:
+		appendStringPair(node, "trigger", m.Triggers[0])
+	default:
+		seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+		for _, t := range m.Triggers {
+			seq.Content = append(seq.Content, scalarNode(t))
+		}
+		node.Content = append(node.Content, keyNode("triggers"), seq)
+	}
+}
+
+func marshalOutput(node *yaml.Node, m Match) error {
+	switch {
+	case m.Form != "":
+		appendStringPair(node, "form", m.Form)
+		if len(m.FormFields) > 0 {
+			fieldsNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			for _, fk := range sortedKeys(m.FormFields) {
+				innerNode := &yaml.Node{}
+				if err := innerNode.Encode(m.FormFields[fk]); err != nil {
+					return fmt.Errorf("encode form field %q: %w", fk, err)
+				}
+				fieldsNode.Content = append(fieldsNode.Content, keyNode(fk), innerNode)
+			}
+			node.Content = append(node.Content, keyNode("form_fields"), fieldsNode)
+		}
+	case m.Markdown != "":
+		appendStringPair(node, "markdown", m.Markdown)
+	case m.HTML != "":
+		appendStringPair(node, "html", m.HTML)
+	case m.ImagePath != "":
+		appendStringPair(node, "image_path", m.ImagePath)
+	default:
+		appendStringPair(node, "replace", m.Replace)
+	}
+	return nil
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	return slices.Sorted(maps.Keys(m))
+}
+
+func marshalVars(node *yaml.Node, vars []Var) error {
+	if len(vars) == 0 {
+		return nil
+	}
+	varsNode := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
+	for _, v := range vars {
+		varNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+		appendStringPair(varNode, "name", v.Name)
+		appendStringPair(varNode, "type", v.Type)
+		if len(v.Params) > 0 {
+			paramsNode := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+			for _, pk := range sortedKeys(v.Params) {
+				valNode := &yaml.Node{}
+				if err := valNode.Encode(v.Params[pk]); err != nil {
+					return fmt.Errorf("encode var param %q: %w", pk, err)
+				}
+				paramsNode.Content = append(paramsNode.Content, keyNode(pk), valNode)
+			}
+			varNode.Content = append(varNode.Content, keyNode("params"), paramsNode)
+		}
+		if v.InjectVars != nil {
+			appendBoolPair(varNode, "inject_vars", *v.InjectVars)
+		}
+		appendOptionalStringSeq(varNode, "depends_on", v.DependsOn)
+		varsNode.Content = append(varsNode.Content, varNode)
+	}
+	node.Content = append(node.Content, keyNode("vars"), varsNode)
+	return nil
 }

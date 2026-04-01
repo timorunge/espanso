@@ -3,7 +3,7 @@
 package espanso
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,10 +16,11 @@ import (
 
 // Package represents an espanso package.yml file.
 type Package struct {
-	Name       string  `yaml:"name"`
-	Parent     string  `yaml:"parent"`
-	GlobalVars []Var   `yaml:"global_vars,omitempty"`
-	Matches    Matches `yaml:"matches"`
+	Name       string   `yaml:"name"`
+	Parent     string   `yaml:"parent"`
+	Imports    []string `yaml:"imports,omitempty"`
+	GlobalVars []Var    `yaml:"global_vars,omitempty"`
+	Matches    Matches  `yaml:"matches"`
 
 	// Version is used for the directory path only, not written to YAML.
 	Version string `yaml:"-"`
@@ -37,15 +38,16 @@ func (p Package) Validate() error {
 	if p.Version == "" {
 		errs = append(errs, errors.New("version is required"))
 	}
+	if len(p.Matches) == 0 {
+		errs = append(errs, errors.New("at least one match is required"))
+	}
 	for i, v := range p.GlobalVars {
 		if err := v.Validate(); err != nil {
-			errs = append(errs, fmt.Errorf("variable[%d]: %w", i, err))
+			errs = append(errs, fmt.Errorf("var[%d]: %w", i, err))
 		}
 	}
-	for i := range p.Matches {
-		if err := p.Matches[i].Validate(); err != nil {
-			errs = append(errs, fmt.Errorf("match[%d]: %w", i, err))
-		}
+	if err := p.Matches.Validate(); err != nil {
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }
@@ -55,19 +57,7 @@ func (p Package) WriteTo(w io.Writer) (int64, error) {
 	if err := p.Validate(); err != nil {
 		return 0, fmt.Errorf("validate package: %w", err)
 	}
-
-	var buf bytes.Buffer
-	enc := yaml.NewEncoder(&buf)
-	enc.SetIndent(2)
-	if err := enc.Encode(p); err != nil {
-		return 0, fmt.Errorf("encode package yaml: %w", err)
-	}
-	if err := enc.Close(); err != nil {
-		return 0, fmt.Errorf("close yaml encoder: %w", err)
-	}
-
-	n, err := w.Write(buf.Bytes())
-	return int64(n), err
+	return encodeYAML(w, p)
 }
 
 // ReadFrom populates p by reading and decoding YAML from r.
@@ -89,9 +79,12 @@ func (p Package) WriteFile(dir string) error {
 }
 
 // ReadPackageDir walks dir recursively and reads every package.yml file found.
-func ReadPackageDir(dir string) ([]Package, error) {
+func ReadPackageDir(ctx context.Context, dir string) ([]Package, error) {
 	var packages []Package
 	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
